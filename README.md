@@ -10,10 +10,6 @@ A responsive weekly task planner built with React Router, React, TypeScript,
 and Tailwind CSS. It supports day-by-day planning, full and minimum task views,
 task completion tracking, plan locking, and task reordering.
 
-## Tech tags
-
-`react` `react-router` `typescript` `tailwindcss` `vite` `docker`
-
 ## Requirements
 
 - Node.js 24 or later
