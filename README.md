@@ -1,94 +1,80 @@
-# Welcome to React Router!
+# Week Planner
 
-A modern, production-ready template for building full-stack React applications using React Router.
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+![React 19](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
+![React Router 8](https://img.shields.io/badge/React_Router-8-ca4245?logo=reactrouter&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ed?logo=docker&logoColor=white)
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+A responsive weekly task planner built with React Router, React, TypeScript,
+and Tailwind CSS. It supports day-by-day planning, full and minimum task views,
+task completion tracking, plan locking, and task reordering.
 
-## Features
+## Tech tags
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+`react` `react-router` `typescript` `tailwindcss` `vite` `docker`
 
-## Getting Started
+## Requirements
 
-### Installation
+- Node.js 24 or later
+- npm
+- Docker (optional, for containerized runs)
 
-Install the dependencies:
+## Run locally
 
-```bash
-npm install
-```
-
-### Development
-
-Start the development server with HMR:
+Install dependencies and start the development server:
 
 ```bash
+npm ci
 npm run dev
 ```
 
-Your application will be available at `http://localhost:5173`.
+Open <http://localhost:5173>.
 
-## Building for Production
-
-Create a production build:
+## Validate and build
 
 ```bash
+npm run typecheck
 npm run build
+npm run start
 ```
 
-## Deployment
+The production server listens on <http://localhost:3000> by default.
 
-### Docker Deployment
+## Run with Docker
 
-To build and run using Docker:
+Build the production image and start it:
 
 ```bash
 docker build -t week-planner .
 docker run --rm -p 3000:3000 week-planner
 ```
 
-Or start the production server with Docker Compose:
+Open <http://localhost:3000>.
 
-```bash
-docker compose up --build
+The image uses a multi-stage build: dependencies are installed, the React Router
+application is compiled, and only production dependencies plus the generated
+`build/` output are copied into the final Node 24 Alpine image.
+
+## Continuous integration
+
+GitHub Actions runs for every push and pull request. The workflow:
+
+1. Installs dependencies with `npm ci`.
+2. Runs TypeScript and React Router type generation checks.
+3. Creates a production build.
+4. Builds the Docker image to catch container deployment failures.
+
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for the complete CI
+definition.
+
+## Project structure
+
+```text
+app/
+  routes/home.tsx             # Home route
+  welcome/week-planner.tsx    # Planner UI and interactions
+  app.css                     # Global Tailwind entry point
+.github/workflows/ci.yml      # CI checks
+Dockerfile                    # Production image
 ```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
-# daily_task_manager
