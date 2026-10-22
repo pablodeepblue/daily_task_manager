@@ -1,149 +1,107 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 
 type Category = "body" | "phd" | "tech" | "rest" | "admin" | "wind";
+type Block = { id: string; title: string; category: Category; duration: number; notes: string[]; minimum: string };
+type Day = { name: string; start: number; blocks: Block[] };
+type PlannerState = { days: Day[]; done: Record<string, Record<string, boolean>>; minimumMode: boolean };
+type Draft = Omit<Block, "id">;
 
-type Block = {
-  id: string;
-  title: string;
-  category: Category;
-  duration: number;
-  notes: string[];
-  minimum: string;
-};
+const storageKey = "week-planner-v1";
+const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const categoryLabel: Record<Category, string> = { body: "Body", phd: "PhD", tech: "GitHub / Tech", rest: "Rest", admin: "Admin / Jobs", wind: "Wind down" };
+const categoryStyle: Record<Category, string> = { body: "border-emerald-500 text-emerald-700", phd: "border-sky-600 text-sky-700", tech: "border-violet-500 text-violet-700", rest: "border-amber-500 text-amber-700", admin: "border-slate-400 text-slate-600", wind: "border-indigo-700 text-indigo-700" };
 
-type Day = {
-  name: string;
-  start: number;
-  blocks: Block[];
-};
-
-const categoryLabel: Record<Category, string> = {
-  body: "Body",
-  phd: "PhD",
-  tech: "GitHub / Tech",
-  rest: "Rest",
-  admin: "Admin / Jobs",
-  wind: "Wind down",
-};
-
-const categoryStyle: Record<Category, string> = {
-  body: "border-emerald-500 text-emerald-700",
-  phd: "border-sky-600 text-sky-700",
-  tech: "border-violet-500 text-violet-700",
-  rest: "border-amber-500 text-amber-700",
-  admin: "border-slate-400 text-slate-600",
-  wind: "border-indigo-700 text-indigo-700",
-};
-
-let nextId = 1;
-const block = (
-  title: string,
-  category: Category,
-  duration: number,
-  notes: string[],
-  minimum: string,
-): Block => ({ id: `block-${nextId++}`, title, category, duration, notes, minimum });
-
-const workday = (friday = false): Block[] => [
-  block("Wake up and reset", "body", 30, ["Water, breakfast, 15–20 min outdoor light", "Get dressed, even at home"], "A glass of water and 5 minutes outside"),
-  block("Move your body", "body", 60, ["Rotate strength, cardio, easy walk", "Finish feeling better, not punished"], "A 10-minute walk"),
-  block("PhD deep work", "phd", 120, ["One deliverable only", "Hardest writing first"], "20 focused minutes"),
-  block("Break", "rest", 30, ["Stretch, snack, step outside"], "Look out a window for 5 minutes"),
-  block("GitHub and technical growth", "tech", 90, ["Improve one existing project", "README, demo, tests"], "20 minutes, one commit"),
-  block("Lunch and real rest", "rest", 60, ["Eat away from your desk"], "Eat a real meal, sitting down"),
-  block("Admin and job search", "admin", 75, ["Advisor emails, application tracker", "One job posting or outreach"], "Answer one email"),
-  ...(friday ? [block("Weekly review", "admin", 20, ["Write down what you finished this week"], "Three bullet points")] : []),
-  block("Shutdown ritual", "wind", 15, ["Write tomorrow’s one task", "Close tabs"], "One line about tomorrow"),
-  block("Evening off", "rest", 330, ["Cook, friends, games, hobbies", "No application checking"], "One thing purely for enjoyment"),
-  block("Wind down", "wind", 90, ["Dim lights, no portals"], "Phone away 30 min before bed"),
+const makeId = () => `block-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+const makeBlock = (title: string, category: Category, duration: number, notes: string[] = [], minimum = ""): Block => ({ id: makeId(), title, category, duration, notes, minimum });
+const weekday = (friday = false): Block[] => [
+  makeBlock("Wake up and reset", "body", 30, ["Water, breakfast, 15–20 min outdoor light", "Get dressed, even at home"], "A glass of water and 5 minutes outside"), makeBlock("Move your body", "body", 60, ["Rotate strength, cardio, easy walk", "Finish feeling better, not punished"], "A 10-minute walk"), makeBlock("PhD deep work", "phd", 120, ["One deliverable only", "Hardest writing first"], "20 focused minutes"), makeBlock("Break", "rest", 30, ["Stretch, snack, step outside"], "Look out a window for 5 minutes"), makeBlock("GitHub and technical growth", "tech", 90, ["Improve one existing project", "README, demo, tests"], "20 minutes, one commit"), makeBlock("Lunch and real rest", "rest", 60, ["Eat away from your desk"], "Eat a real meal, sitting down"), makeBlock("Admin and job search", "admin", 75, ["Advisor emails, application tracker", "One job posting or outreach"], "Answer one email"), ...(friday ? [makeBlock("Weekly review", "admin", 20, ["Write down what you finished this week"], "Three bullet points")] : []), makeBlock("Shutdown ritual", "wind", 15, ["Write tomorrow’s one task", "Close tabs"], "One line about tomorrow"), makeBlock("Evening off", "rest", 330, ["Cook, friends, games, hobbies", "No application checking"], "One thing purely for enjoyment"), makeBlock("Wind down", "wind", 90, ["Dim lights, no portals"], "Phone away 30 min before bed")
 ];
+const createDays = (): Day[] => {
+  const days = [...dayNames.slice(0, 5).map((name, index) => ({ name, start: 540, blocks: weekday(index === 4) })), { name: "Sat", start: 600, blocks: [makeBlock("Wake up slowly", "body", 60, ["No alarm pressure"], "Water and daylight"), makeBlock("Fully off", "rest", 720, ["No applications, no GitHub"], "Do one thing you enjoy"), makeBlock("Wind down", "wind", 90, ["Dim lights, no portals"])] }, { name: "Sun", start: 600, blocks: [makeBlock("Wake up slowly", "body", 60, ["No alarm pressure"], "Water and daylight"), makeBlock("Optional: walk or friend", "body", 60, ["Social contact that is not about applications"]), makeBlock("Optional: light GitHub", "tech", 30, ["Only if you feel like it"]), makeBlock("Rest of the day off", "rest", 540, ["Prep nothing for Monday"], "Skip it"), makeBlock("Wind down", "wind", 90, ["Dim lights, no portals"])] }];
+  return days.map((day, dayIndex) => ({ ...day, blocks: day.blocks.map((block, blockIndex) => ({ ...block, id: `starter-${dayIndex}-${blockIndex}` })) }));
+};
+const defaultDraft = (): Draft => ({ title: "", category: "phd", duration: 60, notes: [], minimum: "" });
+const formatTime = (minutes: number) => { const value = ((minutes % 1440) + 1440) % 1440; const hour = Math.floor(value / 60); return `${hour % 12 || 12}:${String(value % 60).padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`; };
+const formatDuration = (minutes: number) => `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}h` : ""}${Math.floor(minutes / 60) && minutes % 60 ? " " : ""}${minutes % 60 ? `${minutes % 60}m` : ""}`;
+const timeValue = (minutes: number) => `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+const weekKey = () => { const now = new Date(); now.setDate(now.getDate() - ((now.getDay() + 6) % 7)); return now.toDateString(); };
+const categories = new Set<Category>(["body", "phd", "tech", "rest", "admin", "wind"]);
 
-const initialDays: Day[] = [
-  ["Mon", "Tue", "Wed", "Thu", "Fri"].map((name, index) => ({ name, start: 540, blocks: workday(index === 4) })),
-  { name: "Sat", start: 600, blocks: [block("Wake up slowly", "body", 60, ["No alarm pressure"], "Water and daylight"), block("Fully off", "rest", 720, ["No applications, no GitHub"], "Do one thing you enjoy"), block("Wind down", "wind", 90, ["Dim lights, no portals"], "")] },
-  { name: "Sun", start: 600, blocks: [block("Wake up slowly", "body", 60, ["No alarm pressure"], "Water and daylight"), block("Optional: walk or friend", "body", 60, ["Social contact that is not about applications"], ""), block("Optional: light GitHub", "tech", 30, ["Only if you feel like it"], ""), block("Rest of the day off", "rest", 540, ["Prep nothing for Monday"], "Skip it"), block("Wind down", "wind", 90, ["Dim lights, no portals"], "")] },
-];
+function normalizePlanner(value: unknown): PlannerState | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as { days?: unknown; done?: unknown; minimumMode?: unknown };
+  if (!Array.isArray(source.days) || source.days.length !== 7) return null;
 
-function formatTime(minutes: number) {
-  const hour = Math.floor(minutes / 60) % 24;
-  const minute = minutes % 60;
-  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
-}
-
-function formatDuration(minutes: number) {
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return `${hours ? `${hours}h` : ""}${hours && remainder ? " " : ""}${remainder ? `${remainder}m` : ""}`;
+  const days = source.days.map((rawDay, dayIndex): Day | null => {
+    if (!rawDay || typeof rawDay !== "object") return null;
+    const day = rawDay as { start?: unknown; blocks?: unknown; name?: unknown };
+    if (!Array.isArray(day.blocks)) return null;
+    const blocks = day.blocks.map((rawBlock, blockIndex): Block | null => {
+      if (!rawBlock || typeof rawBlock !== "object") return null;
+      const block = rawBlock as { id?: unknown; title?: unknown; category?: unknown; cat?: unknown; duration?: unknown; dur?: unknown; notes?: unknown; minimum?: unknown; min?: unknown };
+      const category = block.category ?? block.cat;
+      const duration = Number(block.duration ?? block.dur);
+      if (!categories.has(category as Category) || !Number.isFinite(duration) || duration < 1) return null;
+      const notes = Array.isArray(block.notes) ? block.notes.filter((note): note is string => typeof note === "string") : typeof block.notes === "string" ? block.notes.split("\n").filter(Boolean) : [];
+      return { id: typeof block.id === "string" ? block.id : `imported-${dayIndex}-${blockIndex}`, title: typeof block.title === "string" ? block.title : "Untitled block", category: category as Category, duration, notes, minimum: typeof block.minimum === "string" ? block.minimum : typeof block.min === "string" ? block.min : "" };
+    });
+    if (blocks.some((block) => block === null)) return null;
+    return { name: typeof day.name === "string" ? day.name : dayNames[dayIndex], start: Number.isFinite(Number(day.start)) ? Number(day.start) : 540, blocks: blocks as Block[] };
+  });
+  if (days.some((day) => day === null)) return null;
+  const done = source.done && typeof source.done === "object" && !Array.isArray(source.done) ? source.done as Record<string, Record<string, boolean>> : {};
+  return { days: days as Day[], done, minimumMode: Boolean(source.minimumMode) };
 }
 
 export function WeekPlanner() {
   const today = (new Date().getDay() + 6) % 7;
-  const [activeDay, setActiveDay] = useState(today);
-  const [minimumMode, setMinimumMode] = useState(false);
-  const [locked, setLocked] = useState(false);
-  const [days, setDays] = useState(initialDays);
-  const [done, setDone] = useState<Set<string>>(() => new Set());
-  const active = days[activeDay];
-
-  const completed = useMemo(
-    () => active.blocks.filter(({ id }) => done.has(id)).length,
-    [active.blocks, done],
-  );
-
-  function toggleDone(id: string) {
-    setDone((current) => {
-      const next = new Set(current);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  const [state, setState] = useState<PlannerState>({ days: createDays(), done: {}, minimumMode: false });
+  const [activeDay, setActiveDay] = useState(today); const [locked, setLocked] = useState(false); const [editor, setEditor] = useState<{ day: number; index: number | null } | null>(null); const [draft, setDraft] = useState<Draft>(defaultDraft); const [selectedDays, setSelectedDays] = useState<number[]>([today]); const [backupOpen, setBackupOpen] = useState(false); const [backupText, setBackupText] = useState(""); const [backupError, setBackupError] = useState(""); const [resetOpen, setResetOpen] = useState(false); const [dragged, setDragged] = useState<{ day: number; index: number } | null>(null); const [loaded, setLoaded] = useState(false);
+  const active = state.days[activeDay]; const currentWeek = weekKey(); const done = state.done[currentWeek] ?? {};
+  useEffect(() => { try { const saved = normalizePlanner(JSON.parse(localStorage.getItem(storageKey) ?? "null")); if (saved) setState(saved); } catch { /* Keep starter schedule. */ } setLoaded(true); }, []);
+  useEffect(() => { if (loaded) localStorage.setItem(storageKey, JSON.stringify(state)); }, [loaded, state]);
+  const completed = useMemo(() => active.blocks.filter((item) => done[item.id]).length, [active.blocks, done]);
+  const categorySummary = useMemo(() => (Object.keys(categoryLabel) as Category[]).map((category) => {
+    const blocks = active.blocks.filter((block) => block.category === category);
+    return { category, count: blocks.length, duration: blocks.reduce((total, block) => total + block.duration, 0) };
+  }), [active.blocks]);
+  const updateDays = (change: (days: Day[]) => Day[]) => setState((current) => ({ ...current, days: change(current.days) }));
+  const updateDraft = <Key extends keyof Draft>(key: Key, value: Draft[Key]) => setDraft((current) => ({ ...current, [key]: value }));
+  const openNew = () => { setDraft(defaultDraft()); setSelectedDays([activeDay]); setEditor({ day: activeDay, index: null }); };
+  const openEdit = (day: number, index: number) => { const item = state.days[day].blocks[index]; setDraft({ title: item.title, category: item.category, duration: item.duration, notes: item.notes, minimum: item.minimum }); setSelectedDays([day]); setEditor({ day, index }); };
+  function saveEditor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editor || locked) return;
+    const cleaned = { ...draft, title: draft.title.trim() || "Untitled block", duration: Math.max(5, Math.round(Number(draft.duration) || 30)), notes: draft.notes.map((note) => note.trim()).filter(Boolean), minimum: draft.minimum.trim() };
+    const editedIndex = editor.index;
+    if (editedIndex === null) {
+      updateDays((days) => days.map((day, index) => selectedDays.includes(index) ? { ...day, blocks: [...day.blocks, { ...cleaned, id: makeId() }] } : day));
+    } else {
+      const targetDay = selectedDays[0] ?? editor.day;
+      updateDays((days) => {
+        const item = { ...days[editor.day].blocks[editedIndex], ...cleaned };
+        if (targetDay === editor.day) {
+          return days.map((day, dayIndex) => dayIndex === editor.day ? { ...day, blocks: day.blocks.map((block, blockIndex) => blockIndex === editedIndex ? item : block) } : day);
+        }
+        return days.map((day, dayIndex) => {
+          if (dayIndex === editor.day) return { ...day, blocks: day.blocks.filter((_, blockIndex) => blockIndex !== editedIndex) };
+          if (dayIndex === targetDay) return { ...day, blocks: [...day.blocks, item] };
+          return day;
+        });
+      });
+    }
+    setEditor(null);
   }
+  function moveBlock(fromDay: number, fromIndex: number, toDay: number, toIndex: number) { if (locked) return; updateDays((days) => { const next = days.map((day) => ({ ...day, blocks: [...day.blocks] })); const [item] = next[fromDay].blocks.splice(fromIndex, 1); const targetIndex = fromDay === toDay && fromIndex < toIndex ? toIndex - 1 : toIndex; next[toDay].blocks.splice(Math.max(0, Math.min(targetIndex, next[toDay].blocks.length)), 0, item); return next; }); }
+  function toggleDone(id: string) { setState((current) => ({ ...current, done: { ...current.done, [currentWeek]: { ...current.done[currentWeek], [id]: !current.done[currentWeek]?.[id] } } })); }
+  function changeStart(value: string) { const [hour, minute] = value.split(":").map(Number); if (Number.isFinite(hour) && Number.isFinite(minute)) updateDays((days) => days.map((day, index) => index === activeDay ? { ...day, start: hour * 60 + minute } : day)); }
+  function deleteBlock(day: number, index: number) { updateDays((days) => days.map((item, dayIndex) => dayIndex === day ? { ...item, blocks: item.blocks.filter((_, blockIndex) => blockIndex !== index) } : item)); setEditor(null); }
+  function loadBackup() { try { const parsed = normalizePlanner(JSON.parse(backupText)); if (!parsed) throw new Error(); setState(parsed); setBackupOpen(false); } catch { setBackupError("That text is not valid schedule data."); } }
+  function onDrop(event: DragEvent<HTMLElement>, day: number, index: number) { event.preventDefault(); if (dragged) moveBlock(dragged.day, dragged.index, day, index); setDragged(null); }
 
-  function moveBlock(index: number, direction: -1 | 1) {
-    if (locked || index + direction < 0 || index + direction >= active.blocks.length) return;
-    setDays((current) => current.map((day, dayIndex) => {
-      if (dayIndex !== activeDay) return day;
-      const blocks = [...day.blocks];
-      [blocks[index], blocks[index + direction]] = [blocks[index + direction], blocks[index]];
-      return { ...day, blocks };
-    }));
-  }
-
-  return (
-    <main className="min-h-screen bg-[#eef3f3] px-4 py-3 text-[#14303a] sm:px-6">
-      <div className="mx-auto max-w-2xl">
-        <header className="sticky top-0 z-10 -mx-4 border-b border-[#d3dfe0] bg-[#eef3f3]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">Week Planner</h1>
-            <div className="flex flex-wrap gap-2">
-              <div className="overflow-hidden rounded-full border border-[#d3dfe0] bg-white">
-                <button className={`px-3 py-1.5 text-sm ${!minimumMode ? "bg-[#14303a] text-white" : ""}`} onClick={() => setMinimumMode(false)}>Full</button>
-                <button className={`px-3 py-1.5 text-sm ${minimumMode ? "bg-[#14303a] text-white" : ""}`} onClick={() => setMinimumMode(true)}>Minimum</button>
-              </div>
-              <button className="rounded-lg border border-[#d3dfe0] bg-white px-3 py-1.5 text-sm" onClick={() => setLocked(!locked)}>{locked ? "🔒 Locked" : "🔓 Lock"}</button>
-            </div>
-          </div>
-          <div className="mt-3 flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Day">
-            {days.map((day, index) => <button key={day.name} role="tab" aria-selected={index === activeDay} onClick={() => setActiveDay(index)} className={`min-w-12 flex-1 rounded-lg border px-3 py-1.5 text-sm ${index === activeDay ? "border-[#14303a] bg-[#14303a] text-white" : "border-[#d3dfe0] bg-white"}`}>{day.name}</button>)}
-          </div>
-          <p className="mt-2 text-xs text-[#5b7580]">Pick a day. Lock freezes the plan so you can only tick things off.</p>
-        </header>
-
-        <section className="mt-4 rounded-xl bg-[#e3f0ee] p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <div><h2 className="text-lg font-bold">{active.name}{activeDay === today ? " · today" : ""}</h2><p className="text-sm text-[#5b7580]">Starts {formatTime(active.start)} · ends {formatTime(active.start + active.blocks.reduce((sum, item) => sum + item.duration, 0))}</p></div>
-            <span className="text-sm text-[#5b7580]">{completed}/{active.blocks.length} done</span>
-          </div>
-          <div className="space-y-2">
-            {active.blocks.map((item, index) => {
-              const start = active.start + active.blocks.slice(0, index).reduce((sum, current) => sum + current.duration, 0);
-              const isDone = done.has(item.id);
-              return <article key={item.id} className={`rounded-lg border border-[#d3dfe0] border-l-4 bg-white p-3 ${categoryStyle[item.category]} ${isDone ? "opacity-55" : ""}`}>
-                <div className="flex items-start gap-3"><input aria-label={`Mark ${item.title} done`} type="checkbox" checked={isDone} onChange={() => toggleDone(item.id)} className="mt-1 size-4 accent-current" /><div className="min-w-0 flex-1"><div className="flex flex-wrap justify-between gap-x-3 text-xs font-semibold text-[#5b7580]"><span>{formatTime(start)} – {formatTime(start + item.duration)}</span><span>{categoryLabel[item.category]} · {formatDuration(item.duration)}</span></div><h3 className={`mt-1 font-semibold ${isDone ? "line-through" : ""}`}>{item.title}</h3>{minimumMode ? <p className="mt-2 rounded bg-[#fff1c9] px-2 py-1 text-sm text-[#5c4300]">Minimum: {item.minimum || "any small version counts."}</p> : item.notes.length > 0 ? <ul className="mt-2 list-disc space-y-0.5 pl-4 text-sm text-[#5b7580]">{item.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}</div>{!locked && <div className="flex gap-1"><button aria-label={`Move ${item.title} up`} disabled={index === 0} onClick={() => moveBlock(index, -1)} className="rounded border border-[#d3dfe0] px-2 py-1 disabled:opacity-30">↑</button><button aria-label={`Move ${item.title} down`} disabled={index === active.blocks.length - 1} onClick={() => moveBlock(index, 1)} className="rounded border border-[#d3dfe0] px-2 py-1 disabled:opacity-30">↓</button></div>}</div>
-              </article>;
-            })}
-          </div>
-        </section>
-      </div>
-    </main>
-  );
+  return <main className="min-h-screen bg-[#eef3f3] px-4 py-3 text-[#14303a] sm:px-6"><div className="mx-auto max-w-5xl"><header className="sticky top-0 z-10 -mx-4 border-b border-[#d3dfe0] bg-[#eef3f3]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"><div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold tracking-tight">Week Planner</h1><div className="flex flex-wrap gap-2"><div className="overflow-hidden rounded-full border border-[#d3dfe0] bg-white"><button className={`px-3 py-1.5 text-sm ${!state.minimumMode ? "bg-[#14303a] text-white" : ""}`} onClick={() => setState((current) => ({ ...current, minimumMode: false }))}>Full</button><button className={`px-3 py-1.5 text-sm ${state.minimumMode ? "bg-[#14303a] text-white" : ""}`} onClick={() => setState((current) => ({ ...current, minimumMode: true }))}>Minimum</button></div><button className="rounded-lg border border-[#d3dfe0] bg-white px-3 py-1.5 text-sm" onClick={() => setLocked((value) => !value)}>{locked ? "🔒 Locked" : "🔓 Lock"}</button>{!locked && <><button className="rounded-lg border border-[#d3dfe0] bg-white px-3 py-1.5 text-sm" onClick={() => { setBackupText(JSON.stringify(state, null, 2)); setBackupError(""); setBackupOpen(true); }}>Backup</button><button className="rounded-lg border border-[#d3dfe0] bg-white px-3 py-1.5 text-sm" onClick={() => setResetOpen(true)}>Reset</button></>}</div></div><div className="mt-3 flex gap-1 overflow-x-auto pb-1" role="tablist">{state.days.map((day, index) => <button key={day.name} role="tab" aria-selected={index === activeDay} onClick={() => setActiveDay(index)} className={`min-w-12 flex-1 rounded-lg border px-3 py-1.5 text-sm ${index === activeDay ? "border-[#14303a] bg-[#14303a] text-white" : "border-[#d3dfe0] bg-white"}`}>{day.name}</button>)}</div><p className="mt-2 text-xs text-[#5b7580]">Pick a day. Drag blocks to reorder them, or use the arrows to move them between days. Lock freezes the plan so you can only tick things off.</p></header><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"><section className="rounded-xl bg-[#e3f0ee] p-3"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-lg font-bold">{active.name}{activeDay === today ? " · today" : ""}</h2><label className="mt-1 flex items-center gap-2 text-sm text-[#5b7580]">Starts <input className="rounded border border-[#d3dfe0] bg-white px-2 py-1" disabled={locked} onChange={(event) => changeStart(event.target.value)} type="time" value={timeValue(active.start)} /></label><p className="mt-1 text-sm text-[#5b7580]">Ends {formatTime(active.start + active.blocks.reduce((sum, item) => sum + item.duration, 0))}</p></div><span className="text-sm text-[#5b7580]">{completed}/{active.blocks.length} done</span></div><div className="space-y-2" onDragOver={(event) => event.preventDefault()} onDrop={(event) => onDrop(event, activeDay, active.blocks.length)}>{active.blocks.map((item, index) => { const start = active.start + active.blocks.slice(0, index).reduce((sum, current) => sum + current.duration, 0); const isDone = Boolean(done[item.id]); return <article draggable={!locked} key={item.id} onDragOver={(event) => event.preventDefault()} onDragStart={() => setDragged({ day: activeDay, index })} onDrop={(event) => onDrop(event, activeDay, index)} className={`rounded-lg border border-[#d3dfe0] border-l-4 bg-white p-3 ${categoryStyle[item.category]} ${isDone ? "opacity-55" : ""}`}><div className="flex items-start gap-3"><input aria-label={`Mark ${item.title} done`} checked={isDone} className="mt-1 size-4 accent-current" onChange={() => toggleDone(item.id)} type="checkbox" /><div className="min-w-0 flex-1"><div className="flex flex-wrap justify-between gap-x-3 text-xs font-semibold text-[#5b7580]"><span>{formatTime(start)} – {formatTime(start + item.duration)}</span><span>{categoryLabel[item.category]} · {formatDuration(item.duration)}</span></div><h3 className={`mt-1 font-semibold ${isDone ? "line-through" : ""}`}>{item.title}</h3>{state.minimumMode ? <p className="mt-2 rounded bg-[#fff1c9] px-2 py-1 text-sm text-[#5c4300]">Minimum: {item.minimum || "any small version counts."}</p> : item.notes.length > 0 ? <ul className="mt-2 list-disc space-y-0.5 pl-4 text-sm text-[#5b7580]">{item.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}</div>{!locked && <div className="flex gap-1"><button disabled={activeDay === 0} onClick={() => moveBlock(activeDay, index, activeDay - 1, state.days[activeDay - 1].blocks.length)} className="rounded border border-[#d3dfe0] px-2 py-1 disabled:opacity-30">←</button><button disabled={index === 0} onClick={() => moveBlock(activeDay, index, activeDay, index - 1)} className="rounded border border-[#d3dfe0] px-2 py-1 disabled:opacity-30">↑</button><button disabled={index === active.blocks.length - 1} onClick={() => moveBlock(activeDay, index, activeDay, index + 2)} className="rounded border border-[#d3dfe0] px-2 py-1 disabled:opacity-30">↓</button><button disabled={activeDay === 6} onClick={() => moveBlock(activeDay, index, activeDay + 1, state.days[activeDay + 1].blocks.length)} className="rounded border border-[#d3dfe0] px-2 py-1 disabled:opacity-30">→</button><button className="rounded border border-[#d3dfe0] px-2 py-1" onClick={() => openEdit(activeDay, index)}>Edit</button></div>}</div></article>; })}</div>{!locked && <button className="mt-3 w-full rounded-lg border border-dashed border-[#9db6ba] bg-white/70 p-2 text-sm text-[#5b7580]" onClick={openNew}>+ Add block</button>}</section><aside className="rounded-xl border border-[#d3dfe0] bg-white p-4 lg:sticky lg:top-4 lg:self-start"><h2 className="font-bold">Category summary</h2><p className="mt-1 text-sm text-[#5b7580]">{active.name} plan</p><dl className="mt-3 space-y-2">{categorySummary.map(({ category, count, duration }) => <div className={`rounded-lg border-l-4 bg-[#f7faf9] px-3 py-2 ${categoryStyle[category]}`} key={category}><dt className="font-medium">{categoryLabel[category]}</dt><dd className="mt-0.5 text-sm text-[#5b7580]">{count} {count === 1 ? "block" : "blocks"} · {duration ? formatDuration(duration) : "0m"}</dd></div>)}</dl></aside></div>
+    {editor && <div className="fixed inset-0 z-20 grid place-items-center bg-black/45 p-4"><form className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onSubmit={saveEditor}><h2 className="text-xl font-bold">{editor.index === null ? "New block" : "Edit block"}</h2><label className="mt-3 block text-sm text-[#5b7580]">Title<input className="mt-1 w-full rounded border border-[#d3dfe0] px-3 py-2 text-[#14303a]" onChange={(event) => updateDraft("title", event.target.value)} required value={draft.title} /></label><label className="mt-3 block text-sm text-[#5b7580]">Category<select className="mt-1 w-full rounded border border-[#d3dfe0] px-3 py-2 text-[#14303a]" onChange={(event) => updateDraft("category", event.target.value as Category)} value={draft.category}>{Object.entries(categoryLabel).map(([category, label]) => <option key={category} value={category}>{label}</option>)}</select></label><label className="mt-3 block text-sm text-[#5b7580]">Length in minutes<input className="mt-1 w-full rounded border border-[#d3dfe0] px-3 py-2 text-[#14303a]" min="5" onChange={(event) => updateDraft("duration", Number(event.target.value))} required step="5" type="number" value={draft.duration} /></label><label className="mt-3 block text-sm text-[#5b7580]">Notes (one per line)<textarea className="mt-1 w-full rounded border border-[#d3dfe0] px-3 py-2 text-[#14303a]" onChange={(event) => updateDraft("notes", event.target.value.split("\n"))} rows={3} value={draft.notes.join("\n")} /></label><label className="mt-3 block text-sm text-[#5b7580]">Minimum version<input className="mt-1 w-full rounded border border-[#d3dfe0] px-3 py-2 text-[#14303a]" onChange={(event) => updateDraft("minimum", event.target.value)} value={draft.minimum} /></label>{editor.index === null ? <fieldset className="mt-3"><legend className="text-sm text-[#5b7580]">Add to days</legend><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{dayNames.map((day, index) => <label className="text-sm" key={day}><input checked={selectedDays.includes(index)} onChange={() => setSelectedDays((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} type="checkbox" /> {day}</label>)}</div></fieldset> : <label className="mt-3 block text-sm text-[#5b7580]">Day<select className="mt-1 w-full rounded border border-[#d3dfe0] px-3 py-2 text-[#14303a]" onChange={(event) => setSelectedDays([Number(event.target.value)])} value={selectedDays[0] ?? editor.day}>{dayNames.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>}<div className="mt-5 flex gap-2"><button className="rounded border border-[#d3dfe0] px-3 py-2" onClick={() => setEditor(null)} type="button">Cancel</button>{editor.index !== null && <button className="mr-auto rounded px-3 py-2 text-red-700" onClick={() => deleteBlock(editor.day, editor.index!)} type="button">Delete</button>}<button className="rounded bg-[#14303a] px-3 py-2 text-white" type="submit">Save</button></div></form></div>}
+    {backupOpen && <div className="fixed inset-0 z-20 grid place-items-center bg-black/45 p-4"><section className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"><h2 className="text-xl font-bold">Backup</h2><p className="mt-2 text-sm text-[#5b7580]">Copy this text somewhere safe, or paste saved planner data and select Load.</p><textarea className="mt-3 h-56 w-full rounded border border-[#d3dfe0] p-2 font-mono text-xs" onChange={(event) => setBackupText(event.target.value)} value={backupText} />{backupError && <p className="mt-2 text-sm text-red-700">{backupError}</p>}<div className="mt-4 flex justify-end gap-2"><button className="rounded border border-[#d3dfe0] px-3 py-2" onClick={() => setBackupOpen(false)}>Close</button><button className="rounded bg-[#14303a] px-3 py-2 text-white" onClick={loadBackup}>Load</button></div></section></div>}
+    {resetOpen && <div className="fixed inset-0 z-20 grid place-items-center bg-black/45 p-4"><section className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"><h2 className="text-xl font-bold">Reset schedule?</h2><p className="mt-2 text-sm text-[#5b7580]">This replaces every day with the starter schedule and clears your ticks. It cannot be undone.</p><div className="mt-5 flex justify-end gap-2"><button className="rounded border border-[#d3dfe0] px-3 py-2" onClick={() => setResetOpen(false)}>Cancel</button><button className="rounded px-3 py-2 text-red-700" onClick={() => { setState({ days: createDays(), done: {}, minimumMode: false }); setResetOpen(false); }}>Reset</button></div></section></div>}
+  </div></main>;
 }
